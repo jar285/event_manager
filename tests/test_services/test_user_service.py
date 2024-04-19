@@ -158,3 +158,146 @@ async def test_unlock_user_account(db_session, locked_user):
     await UserService.unlock_user_account(db_session, locked_user.id)
     is_locked = await UserService.is_account_locked(db_session, locked_user.username)
     assert not is_locked, "The account should be unlocked after calling unlock_user_account."
+
+
+# Test for error handling during user creation with invalid input types
+async def test_create_user_with_invalid_input_types(db_session):
+    invalid_user_data = [
+        {"username": ["invalid_type"], "email": "invalid_email@example.com", "password": "ValidPassword123!"},
+        {"username": "valid_user", "email": {"invalid_type": "invalid_email@example.com"}, "password": "ValidPassword123!"},
+        {"username": "valid_user", "email": "valid_email@example.com", "password": ["invalid_type"]},
+    ]
+    for data in invalid_user_data:
+        user = await UserService.create(db_session, data)
+        assert user is None
+
+# Test for error handling when updating a non-existent user
+async def test_update_non_existent_user(db_session):
+    updated_user = await UserService.update(db_session, "non-existent-id", {"email": "updated_email@example.com"})
+    assert updated_user is None
+
+# Test for error handling when deleting a non-existent user
+async def test_delete_non_existent_user(db_session):
+    deletion_success = await UserService.delete(db_session, "non-existent-id")
+    assert deletion_success is False
+
+# Test for password reset for a non-existent user
+async def test_reset_password_non_existent_user(db_session):
+    reset_success = await UserService.reset_password(db_session, "non-existent-id", "NewPassword123!")
+    assert reset_success is False
+
+
+# Example of a test function using the async_client fixture
+@pytest.mark.asyncio
+async def test_create_user(async_client):
+    form_data = {
+        "username": "admin",
+        "password": "secret",
+    }
+    # Login and get the access token
+    token_response = await async_client.post("/token", data=form_data)
+    access_token = token_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Define user data for the test
+    user_data = {
+        "username": "testuser",
+        "email": "test@example.com",
+        "password": "sS#fdasrongPassword123!",
+    }
+
+    # Send a POST request to create a user
+    response = await async_client.post("/users/", json=user_data, headers=headers)
+
+    # Asserts
+    assert response.status_code == 200
+
+# You can similarly refactor other test functions to use the async_client fixture
+@pytest.mark.asyncio
+async def test_retrieve_user(async_client, user, token):
+    headers = {"Authorization": f"Bearer {token}"}
+    response = await async_client.get(f"/users/{user.id}", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["id"] == str(user.id)
+
+# Existing test cases
+
+# New test cases
+
+
+@pytest.mark.asyncio
+async def test_delete_user_without_token(async_client):
+    response = await async_client.delete("/users/123e4567-e89b-12d3-a456-426614174000")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_update_user_without_token(async_client):
+    updated_data = {"email": "updated@example.com"}
+    response = await async_client.put("/users/123e4567-e89b-12d3-a456-426614174000", json=updated_data)
+    assert response.status_code == 401
+
+@pytest.mark.asyncio
+async def test_create_user_missing_fields(async_client):
+    user_data = {"username": "testuser"}  # Missing required 'password' and 'email' fields
+    response = await async_client.post("/register/", json=user_data)
+    assert response.status_code == 422
+
+@pytest.mark.asyncio
+async def test_create_user_existing_username(async_client, user):
+    user_data = {"username": user.username, "email": "unique@example.com", "password": "AnotherPassword123!"}
+    response = await async_client.post("/register/", json=user_data)
+    assert response.status_code == 400
+    assert "Username already exists" in response.json().get("detail", "")
+
+
+#HERE:
+# Test for error handling when fetching a user with invalid ID format
+async def test_get_user_invalid_id_format(db_session):
+    invalid_user_id = "invalid_id_format"
+    retrieved_user = await UserService.get_by_id(db_session, invalid_user_id)
+    assert retrieved_user is None
+
+# Test for error handling when fetching a user by username with invalid format
+async def test_get_user_invalid_username_format(db_session):
+    invalid_username = "invalid!username"
+    retrieved_user = await UserService.get_by_username(db_session, invalid_username)
+    assert retrieved_user is None
+
+# Test for error handling when fetching a user by email with invalid format
+async def test_get_user_invalid_email_format(db_session):
+    invalid_email = "invalidemail@"
+    retrieved_user = await UserService.get_by_email(db_session, invalid_email)
+    assert retrieved_user is None
+
+# Test for ensuring correct behavior when attempting to delete a user with empty ID
+async def test_delete_user_with_empty_id(db_session):
+    deletion_success = await UserService.delete(db_session, "")
+    assert deletion_success is False  # Ensure deletion fails for an empty ID
+
+# Test for ensuring correct behavior when attempting to list users with negative pagination values
+async def test_list_users_with_negative_pagination(db_session):
+    users = await UserService.list_users(db_session, skip=-10, limit=10)
+    assert len(users) == 0  # Ensure no users are returned for negative skip value
+
+# Test for ensuring correct behavior when attempting to list users with zero limit
+async def test_list_users_with_zero_limit(db_session):
+    users = await UserService.list_users(db_session, skip=0, limit=0)
+    assert len(users) == 0  # Ensure no users are returned for zero limit
+
+
+# Test for ensuring correct behavior when attempting to login with empty username
+async def test_login_with_empty_username(db_session):
+    user = await UserService.login_user(db_session, "", "ValidPassword123!")
+    assert user is None  # Ensure login fails for an empty username
+
+# Test for ensuring correct behavior when attempting to login with empty password
+async def test_login_with_empty_password(db_session):
+    user = await UserService.login_user(db_session, "valid_username", "")
+    assert user is None  # Ensure login fails for an empty password
+
+# Test for ensuring correct behavior when attempting to unlock an account with empty ID
+async def test_unlock_account_with_empty_id(db_session):
+    await UserService.unlock_user_account(db_session, "")
+    is_locked = await UserService.is_account_locked(db_session, "")
+    assert is_locked is False  # Ensure account remains unlocked for an empty ID
